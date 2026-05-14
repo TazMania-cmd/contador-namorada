@@ -1,23 +1,108 @@
 "use client"
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Transaction } from '@/types/finance'
-import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, Trash2 } from 'lucide-react'
+import { PlusCircle, Wallet, ArrowUpCircle, ArrowDownCircle, Trash2, Calendar, Clock } from 'lucide-react'
+import { supabase } from '@/lib/supabase'
+
+type WeekStatus = {
+  id: number;
+  label: string;
+  received: boolean | null;
+};
+
+type ScheduledPayment = {
+  id: string;
+  title: string;
+  amount: number;
+  week_id: number;
+};
 
 export default function Home() {
+  const [isLoaded, setIsLoaded] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState<string>('');
   const [type, setType] = useState<'income' | 'outcome'>('outcome');
 
-  const handleAddTransaction = (e: React.FormEvent) => {
+  const [scheduledPayments, setScheduledPayments] = useState<ScheduledPayment[]>([]);
+  const [schedTitle, setSchedTitle] = useState('');
+  const [schedAmount, setSchedAmount] = useState<string>('');
+  const [schedWeek, setSchedWeek] = useState<string>('1');
+
+  const [weeksStatus, setWeeksStatus] = useState<WeekStatus[]>([
+    { id: 1, label: 'Semana 1 (Dias 1-7)', received: null },
+    { id: 2, label: 'Semana 2 (Dias 8-14)', received: null },
+    { id: 3, label: 'Semana 3 (Dias 15-21)', received: null },
+    { id: 4, label: 'Semana 4 (Dias 22-fim)', received: null },
+  ]);
+
+  useEffect(() => {
+    async function fetchData() {
+      const { data: transData } = await supabase.from('transactions').select('*').order('date', { ascending: false });
+      const { data: weeksData } = await supabase.from('week_status').select('*').order('id', { ascending: true });
+      const { data: schedData } = await supabase.from('scheduled_payments').select('*');
+
+      if (transData) setTransactions(transData);
+      if (weeksData && weeksData.length > 0) setWeeksStatus(weeksData);
+      if (schedData) setScheduledPayments(schedData);
+      setIsLoaded(true);
+    }
+    fetchData();
+  }, []);
+
+  let carryOver = 0;
+  const weeksWithLimit = weeksStatus.map(week => {
+    const weekScheduled = scheduledPayments
+      .filter(p => p.week_id === week.id)
+      .reduce((acc, p) => acc + p.amount, 0);
+
+    let currentLimit = 200 + carryOver;
+    if (week.received === false) {
+      carryOver += 200;
+      currentLimit = 0;
+    } else {
+      carryOver = 0;
+      currentLimit -= weekScheduled;
+    }
+    return { ...week, currentLimit, weekScheduled };
+  });
+
+  const handleWeekChange = async (id: number, value: boolean) => {
+    setWeeksStatus(weeksStatus.map(w => w.id === id ? { ...w, received: value } : w));
+    await supabase.from('week_status').update({ received: value }).eq('id', id);
+  };
+
+  const handleAddScheduled = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const numericValue = Number(schedAmount.replace(/\D/g, "")) / 100;
+    if (!schedTitle || isNaN(numericValue) || numericValue <= 0) {
+      return alert("Por favor, insira um título e um valor válido para o agendamento.");
+    }
+    const newSched: ScheduledPayment = {
+      id: Math.random().toString(36).substr(2, 9),
+      title: schedTitle,
+      amount: numericValue,
+      week_id: Number(schedWeek)
+    };
+    
+    const { error } = await supabase.from('scheduled_payments').insert([newSched]);
+    if (!error) {
+      setScheduledPayments([...scheduledPayments, newSched]);
+      setSchedTitle('');
+      setSchedAmount('');
+    }
+  };
+
+  const handleDeleteScheduled = async (id: string) => {
+    setScheduledPayments(scheduledPayments.filter(p => p.id !== id));
+    await supabase.from('scheduled_payments').delete().eq('id', id);
+  };
+
+  const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 1. LIMPEZA: Remove o "R$", pontos e transforma a vírgula em nada para converter em número
-    // Se 'amount' for "R$ 1.250,50", numericValue vira 1250.50
     const numericValue = Number(amount.replace(/\D/g, "")) / 100;
-
-    // 2. VALIDAÇÃO: Se o resultado não for um número válido ou for zero, para aqui
     if (!title || isNaN(numericValue) || numericValue <= 0) {
       return alert("Por favor, insira um título e um valor válido.");
     }
@@ -25,21 +110,24 @@ export default function Home() {
     const newTransaction: Transaction = {
       id: Math.random().toString(36).substr(2, 9),
       title,
-      amount: numericValue, // AQUI DEVE IR O NÚMERO PURO (ex: 1250.5)
+      amount: numericValue,
       type,
       category: 'Geral',
       date: new Date().toLocaleDateString('pt-BR'),
     };
 
-  setTransactions([newTransaction, ...transactions]);
-  setTitle('');
-  setAmount(''); // Limpa o input
-};
+    const { error } = await supabase.from('transactions').insert([newTransaction]);
+    if (!error) {
+      setTransactions([newTransaction, ...transactions]);
+      setTitle('');
+      setAmount('');
+    }
+  };
 
-  // --- NOVA FUNÇÃO DE EXCLUIR ---
-  const handleDeleteTransaction = (id: string) => {
+  const handleDeleteTransaction = async (id: string) => {
     const updatedTransactions = transactions.filter(t => t.id !== id);
     setTransactions(updatedTransactions);
+    await supabase.from('transactions').delete().eq('id', id);
   };
 
   const totalIncomes = transactions
@@ -94,6 +182,49 @@ export default function Home() {
           </div>
         </header>
 
+        {/* CONTROLE SEMANAL */}
+        <section className="mb-10">
+          <div className="flex items-center gap-2 mb-4">
+            <Calendar className="text-blue-500" size={24} />
+            <h2 className="text-xl font-bold text-gray-800">Controle Semanal (Base R$ 200)</h2>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {weeksWithLimit.map(week => (
+              <div key={week.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-800 mb-2">{week.label}</h3>
+                  <p className="text-sm text-gray-500 mb-3">Recebeu essa semana?</p>
+                  <div className="flex gap-2 mb-4">
+                    <button 
+                      onClick={() => handleWeekChange(week.id, true)}
+                      className={`flex-1 py-1.5 rounded-md text-sm font-medium border transition-colors ${week.received === true ? 'bg-green-100 border-green-500 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                    >
+                      Sim
+                    </button>
+                    <button 
+                      onClick={() => handleWeekChange(week.id, false)}
+                      className={`flex-1 py-1.5 rounded-md text-sm font-medium border transition-colors ${week.received === false ? 'bg-red-100 border-red-500 text-red-700' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
+                    >
+                      Não
+                    </button>
+                  </div>
+                </div>
+                <div className="pt-3 border-t border-gray-100">
+                  <p className="text-xs text-gray-500 mb-1">Limite Disponível</p>
+                  <p className={`text-xl font-bold ${week.currentLimit > 0 ? 'text-blue-600' : week.currentLimit < 0 ? 'text-red-500' : 'text-gray-400'}`}>
+                    R$ {week.currentLimit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                  {week.weekScheduled > 0 && (
+                    <p className="text-xs text-orange-500 mt-1 font-medium">
+                      Agendado: R$ {week.weekScheduled.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
           
           {/* FORMULÁRIO */}
@@ -136,6 +267,65 @@ export default function Home() {
                   <PlusCircle size={20} /> Adicionar
                 </button>
               </form>
+            </div>
+
+            {/* FORMULÁRIO DE AGENDAMENTO */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 sticky top-10 mt-8">
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Clock size={20} className="text-orange-500"/> Agendar Pagamento
+              </h2>
+              <form onSubmit={handleAddScheduled} className="space-y-4">
+                <input 
+                  type="text" 
+                  placeholder="Descrição (ex: Conta)"
+                  className="w-full p-3 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-orange-500"
+                  value={schedTitle}
+                  onChange={(e) => setSchedTitle(e.target.value)}
+                />
+                <input 
+                  type="text" 
+                  placeholder="R$ 0,00"
+                  className="w-full p-3 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-orange-500 transition-all"
+                  value={schedAmount} 
+                  onChange={(e) => setSchedAmount(formatCurrency(e.target.value))} 
+                />
+                <select
+                  className="w-full p-3 rounded-lg border border-gray-300 outline-none focus:ring-2 focus:ring-orange-500 bg-white"
+                  value={schedWeek}
+                  onChange={(e) => setSchedWeek(e.target.value)}
+                >
+                  <option value="1">Semana 1</option>
+                  <option value="2">Semana 2</option>
+                  <option value="3">Semana 3</option>
+                  <option value="4">Semana 4</option>
+                </select>
+                <button type="submit" className="w-full bg-orange-500 text-white p-3 rounded-lg font-bold hover:bg-orange-600 flex items-center justify-center gap-2">
+                  <PlusCircle size={20} /> Agendar
+                </button>
+              </form>
+              
+              {/* Lista de agendamentos */}
+              {scheduledPayments.length > 0 && (
+                <div className="mt-6 pt-6 border-t border-gray-100">
+                  <h3 className="text-sm font-semibold text-gray-500 mb-3">Agendamentos Ativos</h3>
+                  <div className="space-y-3">
+                    {scheduledPayments.map(p => (
+                      <div key={p.id} className="flex justify-between items-center bg-orange-50 p-3 rounded-lg border border-orange-100">
+                        <div>
+                          <p className="font-medium text-orange-900 text-sm">{p.title}</p>
+                          <p className="text-xs text-orange-600">Semana {p.week_id}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="font-bold text-orange-700">R$ {p.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                          <button type="button" onClick={() => handleDeleteScheduled(p.id)} className="text-orange-400 hover:text-red-500">
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
 

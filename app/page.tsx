@@ -225,13 +225,14 @@ export default function Home() {
           </div>
         </section>
 
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+        {/* ROW 1: FORMULÁRIOS LADO A LADO */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
           
           {/* FORMULÁRIO */}
-          <section className="lg:col-span-2">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 sticky top-10">
+          <section>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 h-full flex flex-col">
               <h2 className="text-lg font-semibold mb-4">Nova Transação</h2>
-              <form onSubmit={handleAddTransaction} className="space-y-4">
+              <form onSubmit={handleAddTransaction} className="space-y-4 flex flex-col flex-1">
                 <input 
                   type="text" 
                   placeholder="Descrição"
@@ -263,14 +264,18 @@ export default function Home() {
                     Saída
                   </button>
                 </div>
-                <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2">
-                  <PlusCircle size={20} /> Adicionar
-                </button>
+                <div className="mt-auto pt-4">
+                  <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 flex items-center justify-center gap-2">
+                    <PlusCircle size={20} /> Adicionar
+                  </button>
+                </div>
               </form>
             </div>
+          </section>
 
-            {/* FORMULÁRIO DE AGENDAMENTO */}
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 sticky top-10 mt-8">
+          {/* FORMULÁRIO DE AGENDAMENTO */}
+          <section>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 h-full flex flex-col">
               <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                 <Clock size={20} className="text-orange-500"/> Agendar Pagamento
               </h2>
@@ -299,14 +304,16 @@ export default function Home() {
                   <option value="3">Semana 3</option>
                   <option value="4">Semana 4</option>
                 </select>
-                <button type="submit" className="w-full bg-orange-500 text-white p-3 rounded-lg font-bold hover:bg-orange-600 flex items-center justify-center gap-2">
-                  <PlusCircle size={20} /> Agendar
-                </button>
+                <div className="pt-4">
+                  <button type="submit" className="w-full bg-orange-500 text-white p-3 rounded-lg font-bold hover:bg-orange-600 flex items-center justify-center gap-2">
+                    <PlusCircle size={20} /> Agendar
+                  </button>
+                </div>
               </form>
               
               {/* Lista de agendamentos */}
               {scheduledPayments.length > 0 && (
-                <div className="mt-6 pt-6 border-t border-gray-100">
+                <div className="mt-6 pt-6 border-t border-gray-100 flex-1 overflow-y-auto max-h-[150px] pr-2">
                   <h3 className="text-sm font-semibold text-gray-500 mb-3">Agendamentos Ativos</h3>
                   <div className="space-y-3">
                     {scheduledPayments.map(p => (
@@ -328,9 +335,11 @@ export default function Home() {
               )}
             </div>
           </section>
+        </div>
 
-          {/* LISTA COM BOTÃO DE EXCLUIR */}
-          <section className="lg:col-span-3">
+        {/* ROW 2: HISTÓRICO RECENTE EMBAIXO */}
+        <div className="w-full">
+          <section>
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200">
               <div className="p-6 border-b border-gray-100 font-semibold">Histórico Recente</div>
               <div className="divide-y divide-gray-100">
